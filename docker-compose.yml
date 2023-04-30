@@ -1,0 +1,62 @@
+version: "3.9"
+x-app: &default-app
+  build:
+    context: "."
+    target: "app"
+    args:
+      - "RAILS_ENV=${RAILS_ENV:-production}"
+      - "NODE_ENV=${NODE_ENV:-production}"
+  image: pseudoclaws/busstation:se
+  platform: ${PLATFORM:-linux/arm64}
+  network_mode: "host"
+  env_file:
+    - ".env"
+  restart: "${DOCKER_RESTART_POLICY:-unless-stopped}"
+  stop_grace_period: "3s"
+  tty: true
+  volumes:
+    - "${DOCKER_WEB_VOLUME:-./public:/app/public}"
+    - "${DOCKER_LOG_VOLUME:-./log:/app/log}"
+
+services:
+  web:
+    <<: *default-app
+    deploy:
+      resources:
+        limits:
+          cpus: "${DOCKER_WEB_CPUS:-0}"
+          memory: "${DOCKER_WEB_MEMORY:-0}"
+    command: ./docker-entrypoint.sh
+    container_name: web
+    expose:
+      - "${DOCKER_WEB_PORT:-5000}"
+    volumes:
+      - /home/pseudoclaws/docker/master.key:/app/config/master.key
+
+  worker:
+    <<: *default-app
+    command: "bundle exec sidekiq"
+    container_name: sidekiq
+    entrypoint: [ ]
+    deploy:
+      resources:
+        limits:
+          cpus: "${DOCKER_WORKER_CPUS:-0}"
+          memory: "${DOCKER_WORKER_MEMORY:-0}"
+
+  redis:
+    image: redis:6.2-alpine
+    restart: always
+    ports:
+      - '127.0.0.1:6379:6379'
+    command: redis-server --save 20 1 --loglevel warning
+    volumes:
+      - cache:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: "${DOCKER_REDIS_MEMORY:-0}"
+volumes:
+  cache:
+    driver: local
